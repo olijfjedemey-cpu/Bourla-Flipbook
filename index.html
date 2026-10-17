@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="nl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bourlaschool — Olivia De Mey</title>
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin:0; min-height:100%; background:#f3f1ec; color:#222; font-family:Arial, sans-serif; }
+  body { display:flex; flex-direction:column; align-items:center; padding:18px 12px 24px; }
+  header { width:min(1100px,100%); display:flex; justify-content:space-between; align-items:center; gap:12px; margin-bottom:14px; }
+  .title { font-size:13px; letter-spacing:.12em; text-transform:uppercase; }
+  .controls { display:flex; align-items:center; gap:8px; }
+  button { font:inherit; border:1px solid #aaa; background:#fff; padding:9px 13px; cursor:pointer; }
+  button:disabled { opacity:.35; cursor:default; }
+  #status { min-width:78px; text-align:center; font-size:12px; }
+  #book-wrap { width:min(1100px,100%); display:flex; justify-content:center; align-items:center; min-height:55vh; }
+  #book { margin:0 auto; }
+  .page { background:white; overflow:hidden; }
+  .page canvas { display:block; width:100%; height:100%; object-fit:contain; }
+  #message { font-size:13px; line-height:1.5; max-width:700px; text-align:center; margin:16px auto 0; color:#555; }
+  @media(max-width:600px) {
+    body { padding:10px 6px 18px; }
+    header { align-items:flex-start; flex-direction:column; }
+    .controls { width:100%; justify-content:center; }
+    #book-wrap { min-height:45vh; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <div class="title">Bourlaschool · Olivia De Mey</div>
+  <div class="controls">
+    <button id="prev" type="button" disabled>← Vorige</button>
+    <span id="status">Laden…</span>
+    <button id="next" type="button" disabled>Volgende →</button>
+    <button id="fullscreen" type="button">Volledig scherm</button>
+  </div>
+</header>
+<div id="book-wrap"><div id="book" aria-label="Interactief Bourlaschool-portfolio"></div></div>
+<p id="message">Gebruik de pijltjes of veeg op een touchscreen om door het portfolio te bladeren.</p>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script src="https://unpkg.com/page-flip@2.0.7/dist/js/page-flip.browser.min.js"></script>
+<script>
+(async function () {
+  const pdfUrl = "./bourlaschool.pdf";
+  const status = document.getElementById("status");
+  const prev = document.getElementById("prev");
+  const next = document.getElementById("next");
+  const bookEl = document.getElementById("book");
+  const wrap = document.getElementById("book-wrap");
+  if (!window.pdfjsLib || !window.St) {
+    status.textContent = "Laadfout";
+    document.getElementById("message").textContent = "Een externe bibliotheek kon niet laden. Controleer de internetverbinding.";
+    return;
+  }
+  pdfjsLib.GlobalWorkerOptions.workerSrc =
+    "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+  try {
+    const pdf = await pdfjsLib.getDocument(pdfUrl).promise;
+    const pages = [];
+    let baseW = 0, baseH = 0;
+    for (let i = 1; i <= pdf.numPages; i++) {
+      const page = await pdf.getPage(i);
+      const viewport = page.getViewport({ scale: 1 });
+      if (!baseW) { baseW = viewport.width; baseH = viewport.height; }
+      const canvas = document.createElement("canvas");
+      const scale = Math.min(1.5, 1400 / viewport.width);
+      const renderViewport = page.getViewport({ scale });
+      canvas.width = Math.ceil(renderViewport.width);
+      canvas.height = Math.ceil(renderViewport.height);
+      await page.render({ canvasContext: canvas.getContext("2d"), viewport: renderViewport }).promise;
+      const pageDiv = document.createElement("div");
+      pageDiv.className = "page";
+      pageDiv.appendChild(canvas);
+      bookEl.appendChild(pageDiv);
+      pages.push(pageDiv);
+      status.textContent = `Pagina ${i} / ${pdf.numPages}`;
+    }
+
+    const isMobile = () => window.matchMedia("(max-width: 600px)").matches;
+    const pageFlip = new St.PageFlip(bookEl, {
+      width: Math.round(baseW * 0.78),
+      height: Math.round(baseH * 0.78),
+      size: "stretch",
+      minWidth: 260, maxWidth: 900,
+      minHeight: 360, maxHeight: 1200,
+      showCover: true,
+      mobileScrollSupport: true,
+      usePortrait: true,
+      flippingTime: 650,
+      maxShadowOpacity: 0.22,
+      drawShadow: true,
+      autoSize: true
+    });
+    pageFlip.loadFromHTML(pages);
+    function update() {
+      const current = pageFlip.getCurrentPageIndex() + 1;
+      status.textContent = `Pagina ${current} / ${pdf.numPages}`;
+      prev.disabled = current <= 1;
+      next.disabled = current >= pdf.numPages;
+    }
+    prev.addEventListener("click", () => pageFlip.flipPrev());
+    next.addEventListener("click", () => pageFlip.flipNext());
+    document.getElementById("fullscreen").addEventListener("click", async () => {
+      if (document.fullscreenElement) await document.exitFullscreen();
+      else if (wrap.requestFullscreen) await wrap.requestFullscreen();
+    });
+    pageFlip.on("flip", update);
+    pageFlip.on("init", update);
+    update();
+  } catch (err) {
+    console.error(err);
+    status.textContent = "Kon PDF niet laden";
+    document.getElementById("message").textContent =
+      "Controleer of bourlaschool.pdf naast index.html staat en of de site via HTTPS wordt geopend.";
+  }
+})();
+</script>
+</body>
+</html>
