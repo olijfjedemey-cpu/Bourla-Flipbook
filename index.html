@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="nl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title></title>
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin:0; width:100%; min-height:100%; background:transparent; }
+  body { display:flex; align-items:center; justify-content:center; overflow:hidden; font-family:Arial,sans-serif; }
+  #stage { width:100%; min-height:100vh; display:flex; align-items:center; justify-content:center; gap:clamp(8px,2vw,26px); padding:10px; background:transparent; }
+  #book-shell { position:relative; display:flex; align-items:center; justify-content:center; min-width:0; }
+  #book { position:relative; z-index:1; }
+  /* Subtiele stapelrand voor een papieren indruk, zonder achtergrondvlak */
+  #book::after { content:""; position:absolute; z-index:-1; top:5px; right:-5px; bottom:5px; width:6px; border-radius:0 2px 2px 0; background:repeating-linear-gradient(to bottom,#e4e1dc 0,#fff 2px,#d8d5d0 3px); box-shadow:2px 2px 5px #00000018; }
+  .page { background:#fff; overflow:hidden; box-shadow:0 1px 5px #00000018; }
+  .page-content { width:100%; height:100%; background:#fff; overflow:hidden; }
+  .page-content canvas { display:block; width:100%; height:100%; object-fit:fill; }
+  .arrow { appearance:none; border:0; background:transparent; color:#333; width:clamp(28px,4vw,48px); height:clamp(40px,7vw,64px); flex:0 0 auto; display:flex; align-items:center; justify-content:center; cursor:pointer; padding:0; opacity:.8; transition:opacity .15s, transform .15s; }
+  .arrow:hover { opacity:1; transform:scale(1.08); }
+  .arrow:focus-visible { outline:2px solid #777; outline-offset:3px; border-radius:4px; }
+  .arrow svg { width:100%; max-width:34px; height:auto; }
+  .arrow:disabled { opacity:.18; cursor:default; transform:none; }
+  #message { position:fixed; inset:0; display:flex; align-items:center; justify-content:center; padding:24px; color:#555; font-size:14px; text-align:center; background:transparent; }
+  #message[hidden] { display:none; }
+  @media(max-width:600px) {
+    #stage { gap:5px; padding:4px; }
+    .arrow { width:25px; }
+    #book::after { right:-3px; width:4px; }
+  }
+</style>
+</head>
+<body>
+<div id="stage" aria-label="Bladerboek">
+  <button class="arrow" id="prev" type="button" aria-label="Vorige pagina" disabled>
+    <svg viewBox="0 0 24 40" aria-hidden="true"><path d="M19 3 L4 20 L19 37" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+  </button>
+  <div id="book-shell"><div id="book"></div></div>
+  <button class="arrow" id="next" type="button" aria-label="Volgende pagina" disabled>
+    <svg viewBox="0 0 24 40" aria-hidden="true"><path d="M5 3 L20 20 L5 37" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+  </button>
+</div>
+<div id="message">Boekje wordt geladen…</div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/page-flip@2.0.7/dist/js/page-flip.browser.js"></script>
+<script>
+(async function () {
+  const message = document.getElementById('message');
+  const book = document.getElementById('book');
+  const prev = document.getElementById('prev');
+  const next = document.getElementById('next');
+  function fail(text) { message.hidden = false; message.textContent = text; }
+  try {
+    if (!window.pdfjsLib) throw new Error('De PDF-lezer kon niet worden geladen. Controleer of externe scripts toegestaan zijn.');
+    if (!window.St || !window.St.PageFlip) throw new Error('De bladerboek-bibliotheek kon niet worden geladen. Probeer de pagina opnieuw te openen.');
+    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+    const pdf = await pdfjsLib.getDocument({url:'./bourlaschool.pdf'}).promise;
+    const pageWidth = 520;
+    const pageHeight = 735;
+    for (let i = 1; i <= pdf.numPages; i++) {
+      const pdfPage = await pdf.getPage(i);
+      const base = pdfPage.getViewport({scale:1});
+      const scale = Math.min(pageWidth / base.width, pageHeight / base.height) * 1.7;
+      const viewport = pdfPage.getViewport({scale});
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.ceil(viewport.width);
+      canvas.height = Math.ceil(viewport.height);
+      const ctx = canvas.getContext('2d', {alpha:false});
+      ctx.fillStyle = '#fff'; ctx.fillRect(0,0,canvas.width,canvas.height);
+      await pdfPage.render({canvasContext:ctx, viewport}).promise;
+      const page = document.createElement('div');
+      page.className = 'page';
+      const content = document.createElement('div');
+      content.className = 'page-content';
+      canvas.style.objectFit = 'contain';
+      content.appendChild(canvas); page.appendChild(content); book.appendChild(page);
+    }
+    const flip = new St.PageFlip(book, {
+      width:520, height:735, size:'stretch', minWidth:260, maxWidth:520,
+      minHeight:368, maxHeight:735, showCover:true, usePortrait:true,
+      startPage:0, drawShadow:true, maxShadowOpacity:0.18,
+      flippingTime:650, useMouseEvents:true, mobileScrollSupport:false,
+      swipeDistance:30, clickEventForward:true, disableFlipByClick:false
+    });
+    flip.loadFromHTML(document.querySelectorAll('.page'));
+    function sync() {
+      prev.disabled = flip.getCurrentPageIndex() <= 0;
+      next.disabled = flip.getCurrentPageIndex() >= pdf.numPages - 1;
+    }
+    prev.addEventListener('click', () => flip.flipPrev());
+    next.addEventListener('click', () => flip.flipNext());
+    flip.on('flip', sync);
+    flip.on('init', sync);
+    message.hidden = true;
+    sync();
+  } catch (err) {
+    console.error(err);
+    fail('Het boekje kon niet laden. Controleer of bourlaschool.pdf naast index.html staat en probeer opnieuw.');
+  }
+})();
+</script>
+</body>
+</html>
